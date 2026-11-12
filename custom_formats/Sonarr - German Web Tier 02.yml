@@ -20,11 +20,6 @@ conditions:
   required: false
   type: release_group
   pattern: ABJ
-- name: Sonarr - FLORiX
-  negate: false
-  required: false
-  type: release_group
-  pattern: FLORiX
 - name: Sonarr - MULTiPLEX
   negate: false
   required: false

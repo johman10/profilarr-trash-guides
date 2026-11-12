@@ -15,6 +15,11 @@ conditions:
   required: false
   type: release_group
   pattern: Sonarr - BALENCiAGA
+- name: Sonarr - FLORiX
+  negate: false
+  required: false
+  type: release_group
+  pattern: FLORiX
 - name: Sonarr - HQC
   negate: false
   required: false

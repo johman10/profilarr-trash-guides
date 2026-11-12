@@ -15,11 +15,6 @@ conditions:
   required: false
   type: release_group
   pattern: Radarr - ABJ (1)
-- name: Radarr - FLORiX
-  negate: false
-  required: false
-  type: release_group
-  pattern: FLORiX
 - name: Radarr - MULTiPLEX
   negate: false
   required: false
