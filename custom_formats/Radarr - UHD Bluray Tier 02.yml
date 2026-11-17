@@ -42,4 +42,9 @@ conditions:
   required: false
   type: release_group
   pattern: Radarr - RandomBytes
+- name: Radarr - SoLaR
+  negate: false
+  required: false
+  type: release_group
+  pattern: Radarr - SoLaR
 tests: []

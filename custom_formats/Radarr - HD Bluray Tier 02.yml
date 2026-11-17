@@ -62,4 +62,9 @@ conditions:
   required: false
   type: release_group
   pattern: sbR
+- name: Radarr - SoLaR
+  negate: false
+  required: false
+  type: release_group
+  pattern: Radarr - SoLaR
 tests: []

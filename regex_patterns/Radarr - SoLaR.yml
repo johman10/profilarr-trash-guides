@@ -1,0 +1,6 @@
+name: Radarr - SoLaR
+pattern: ^(SoLaR)$
+description: ''
+tags:
+- Radarr
+tests: []
