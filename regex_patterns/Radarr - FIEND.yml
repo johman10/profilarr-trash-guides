@@ -1,0 +1,6 @@
+name: Radarr - FIEND
+pattern: ^(FIEND)$
+description: ''
+tags:
+- Radarr
+tests: []

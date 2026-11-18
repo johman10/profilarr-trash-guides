@@ -15,6 +15,11 @@ conditions:
   required: false
   type: release_group
   pattern: Dooky (1)
+- name: Radarr - FIEND
+  negate: false
+  required: false
+  type: release_group
+  pattern: Radarr - FIEND
 - name: Radarr - GNOMiSSiON
   negate: false
   required: false
