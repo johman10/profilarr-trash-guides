@@ -4,10 +4,7 @@ version = "0.1.0"
 description = "Generates a Profilarr database from TRaSH-Guides data"
 readme = "README.md"
 requires-python = ">=3.13"
-dependencies = [
-    "pyyaml",
-    "markdownify",
-]
+dependencies = []
 
 [project.optional-dependencies]
 dev = [

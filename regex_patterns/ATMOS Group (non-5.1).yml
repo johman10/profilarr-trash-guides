@@ -1,7 +1,0 @@
-name: ATMOS Group (non-5.1)
-pattern: ^(?!.*[^0-9]5[ .][0-1]\b).*\b(HQMUX|W4NK3R|DON|CtrlHD|3L)\b
-description: ''
-tags:
-- Radarr
-- Sonarr
-tests: []

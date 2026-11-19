@@ -1,6 +1,0 @@
-name: Radarr - EVO (no WEBDL)
-pattern: (?<!\bweb[ ._-]?(dl|rip)?\b.*)-(EVO)\b
-description: ''
-tags:
-- Radarr
-tests: []

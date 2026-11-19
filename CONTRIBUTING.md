@@ -1,31 +1,23 @@
 # Contributing
 
-## Commit Message Format
+This branch generates a Profilarr v2 PCD from TRaSH-Guides source data.
 
+## Development
+
+Install the project dependencies and run the checks with:
+
+```sh
+uv sync --extra dev
+uv run pytest -q
+uv run pylint scripts tests
 ```
-type(component): Description
-[Optional body]
-```
 
-## Types and Components
+## PCD changes
 
-### Change Types
+The generator maps TRaSH-Guides JSON into the pinned relational schema. Update the mapping and its tests when source semantics change. Validate the PCD with `uv run scripts/validate.py .`.
 
-| Type     | Purpose                                            | Example                                            |
-| -------- | -------------------------------------------------- | -------------------------------------------------- |
-| `create` | Building entirely new components or systems        | `create(profile): 2160p Remux quality profile`     |
-| `add`    | Adding entries to existing systems                 | `add(format): de[42] as Tier 4 GPPi group`         |
-| `tweak`  | Fine-tuning and adjustments to existing components | `tweak(format): Better h265 parsing for 1080p WEB` |
-| `fix`    | Corrections and bug fixes                          | `fix(regex): Required negation for remux pattern`  |
+Generated SQL operations are append-only. Generate a new numbered operation for source changes; do not edit or remove an operation that has already been emitted.
 
-### Components
+## Commit messages
 
-| Component | Purpose                     | Includes                                                                                                 |
-| --------- | --------------------------- | -------------------------------------------------------------------------------------------------------- |
-| `format`  | Changes to Custom Formats   | - Format definitions<br>- Scoring adjustments<br>- Release group configurations<br>- Quality preferences |
-| `regex`   | Changes to regex patterns   | - Pattern definitions<br>- Matching logic<br>- Parser improvements<br>- Detection rules                  |
-| `profile` | Changes to Quality Profiles | - Profile creation/modification<br>- Quality settings<br>- Scoring systems<br>- Default configurations   |
-
-## Contributing with Profilarr
-
-Profilarr was built specifically to maintain these standards, making it our recommended way to contribute. While we welcome external contributions, please ensure they strictly follow these commit guidelines.
+Use `type(component): Description`, for example `fix(generator): Handle a new source field`.

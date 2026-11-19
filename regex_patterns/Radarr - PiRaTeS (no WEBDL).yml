@@ -1,6 +1,0 @@
-name: Radarr - PiRaTeS (no WEBDL)
-pattern: (?<!\bweb[ ._-]?(dl|rip)?\b.*)-(PiRaTeS)\b
-description: ''
-tags:
-- Radarr
-tests: []

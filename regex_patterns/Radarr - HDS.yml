@@ -1,6 +1,0 @@
-name: Radarr - HDS
-pattern: ^(10bit-)?HDS$
-description: ''
-tags:
-- Radarr
-tests: []

@@ -1,7 +1,0 @@
-name: ATMOS (2)
-pattern: \b(ATMOS|CtrlHD|W4NK3R|HQMUX|DON|3L)(\b|\d)
-description: ''
-tags:
-- Radarr
-- Sonarr
-tests: []
