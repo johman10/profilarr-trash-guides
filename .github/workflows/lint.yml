@@ -1,9 +1,10 @@
 name: Lint and Format Check
 
 on:
+  push:
+    branches: [v2-support]
   pull_request:
-    types: [opened, synchronize]
-  workflow_dispatch:
+    branches: [v2-support]
 
 jobs:
   lint:

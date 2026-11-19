@@ -1,79 +1,57 @@
-# Unofficial TRaSH-Guides Database for Profilarr
+# Unofficial TRaSH-Guides PCD for Profilarr v2
 
-This repository hosts [TRaSH-Guides's](https://trash-guides.info/) unofficial database for Profilarr containing:
+This repository generates a [Profilarr Compliant Database (PCD)](https://github.com/Dictionarry-Hub/schema)
+from the JSON configuration in [TRaSH-Guides](https://github.com/TRaSH-Guides/Guides).
+The PCD manifest pins the shared schema version, and generated SQL operations are
+validated against that schema before they are published.
 
-- Regex Patterns
-- Custom Formats
-- Quality Profiles
-- Media Management
+The v2 implementation is developed on the `v2-support` branch while `stable`
+continues to host the existing Profilarr v1 database.
 
-The goal of this repository is to generate a Profilarr database based on TRaSH-Guides configuration without any changes. If you want anything custom you can commit it yourself within the Profilarr UI.
+The generated configurations are based on TRaSH-Guides, whose MIT license and
+copyright notice are included in [TRASH-GUIDES-LICENSE.txt](./TRASH-GUIDES-LICENSE.txt).
 
-The repo will be automatically kept in sync with the TRaSH-Guides repository. A Github Action will run every day pulling the latest version of TRaSH-Guides and running the scripts committing and pushing any changes.
+## Requirements
 
-## Scripts
+- Python 3.13+
+- [uv](https://docs.astral.sh/uv/)
+- A local TRaSH-Guides checkout containing `docs/json/`
 
-The repository a script to generate the specification based on the TRaSH-Guide data.
-
-### Requirements
-
-- **Python 3.13+**
-- **UV** for package management - install via [official instructions](https://github.com/astral-sh/uv?tab=readme-ov-file#installation)
-- **TRaSH-Guides data** - a local clone with JSON data in `docs/json/` (not automatically cloned)
-
-Dependencies are defined in `pyproject.toml` and managed by UV.
-
-### Running the script
-
-Assuming you're in the root directory of the repository you can now run:
-
-```
-uv run scripts/generate.py /path/to/trash-guides/docs/json .
-```
-
-It will clear any potentially pre-existing output and generate new output based on the provided TRaSH-Guides folder.
-
-## Testing
-
-This project includes automated tests to validate the integrity of generated output files.
-
-### Running Tests
-
-The test suite validates that:
-- Every pattern referenced in custom formats exists as a regex pattern file
-- Every custom format referenced in profiles exists as a custom format file
+Install the project and development dependencies:
 
 ```bash
-# Install dev dependencies
 uv sync --extra dev
-
-# Run all tests
-uv run pytest tests/ -v
-
-# Run specific test files
-uv run pytest tests/test_custom_formats.py -v
-uv run pytest tests/test_profiles.py -v
-
-# Run with coverage report
-uv run pytest tests/ --cov=scripts --cov-report=term
 ```
 
-### Test Validation
+## Generate and validate
 
-The tests ensure data integrity across the generated output:
-- **Custom Format Tests** - Validates all pattern references in `custom_formats/` exist in `regex_patterns/`
-- **Profile Tests** - Validates all custom format references in `profiles/` exist in `custom_formats/`
-
-If a test fails, it will clearly indicate which files contain broken references, making it easy to identify and fix issues.
-
-## Code Quality
-
-This project uses **pylint** for static code analysis and quality checks.
+From the repository root, provide the JSON directory from a TRaSH-Guides checkout:
 
 ```bash
-# Install dev tools
-uv sync --extra dev
+uv run scripts/generate.py /path/to/Guides/docs/json .
+uv run scripts/validate.py .
+```
 
-# Run linting
+The first run creates `ops/1.initial.sql`. Later runs replay the existing
+operations and append a numbered, guarded SQL delta only when source data changes.
+Previously generated operations are never rewritten. Review and commit each new
+operation with the source or mapping change that produced it.
+
+The pinned schema files under `scripts/schema/1.1.0/` are an offline validation
+snapshot; the PCD itself declares the schema dependency in `pcd.json`.
+
+## Tests and lint
+
+```bash
+uv run pytest -q
 uv run pylint scripts tests
 ```
+
+The tests exercise the generation CLI, append-only updates, fractional
+quality-size rounding, naming and profile mappings, and SQL loading with foreign
+key validation against the pinned schema.
+
+The `v2-support` branch runs generation, schema validation, tests, and lint on
+pushes and pull requests. Scheduled runs are deferred until v2 becomes the
+default branch; manual generation is launched from the workflow retained on
+`stable`.

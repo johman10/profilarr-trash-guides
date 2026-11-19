@@ -1,97 +1,96 @@
-import os
+import json
+import sqlite3
 import sys
+from pathlib import Path
 
-import yaml
-from utils.cf_groups import collect_cf_groups
-from utils.custom_formats import collect_custom_formats
-from utils.media_management import collect_media_management
-from utils.profiles import collect_profiles
-from utils.regex_patterns import collect_regex_patterns
+from pcd.source import SourceError, collect_source_rows
+from pcd.sql import (
+    SQLGenerationError,
+    operation_sort_key,
+    render_delta,
+    render_inserts,
+    replay_operations,
+)
 
 
-# Prevent aliases from showing up
-yaml.Dumper.ignore_aliases = lambda *args: True
+SCHEMA_DEPENDENCY = "https://github.com/Dictionarry-Hub/schema"
+SCHEMA_VERSION = "1.1.0"
 
 
-def clear_output_dir(output_dir):
-    if not os.path.exists(output_dir):
-        print("Output directory does not exist, skipping clearing")
+class GenerationError(ValueError):
+    """Raised when PCD output cannot be generated safely."""
+
+
+def _validate_manifest(manifest_path: Path) -> None:
+    if not manifest_path.is_file():
+        raise GenerationError(f"Missing PCD manifest: {manifest_path}")
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise GenerationError(f"Unable to read PCD manifest {manifest_path}: {error}") from error
+    dependencies = manifest.get("dependencies")
+    if not isinstance(dependencies, dict) or dependencies.get(SCHEMA_DEPENDENCY) != SCHEMA_VERSION:
+        raise GenerationError(
+            f"{manifest_path} must pin {SCHEMA_DEPENDENCY} to {SCHEMA_VERSION}"
+        )
+
+
+def generate(input_dir: Path, output_dir: Path) -> Path | None:
+    _validate_manifest(output_dir / "pcd.json")
+    operations_dir = output_dir / "ops"
+    operations_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        existing_operations = sorted(operations_dir.glob("*.sql"), key=operation_sort_key)
+    except SQLGenerationError as error:
+        raise GenerationError(str(error)) from error
+    operation_numbers = [operation_sort_key(path)[0] for path in existing_operations]
+    if len(operation_numbers) != len(set(operation_numbers)):
+        raise GenerationError("PCD operation numbers must be unique")
+    rows = collect_source_rows(input_dir)
+
+    database = sqlite3.connect(":memory:")
+    try:
+        replay_operations(
+            database,
+            Path(__file__).parent / "schema" / SCHEMA_VERSION / "ops",
+            existing_operations,
+        )
+        operation_sql = render_delta(database, rows) if existing_operations else render_inserts(rows)
+        if not operation_sql:
+            return None
+        database.executescript(operation_sql)
+        violations = database.execute("PRAGMA foreign_key_check").fetchall()
+        if violations:
+            raise GenerationError(f"Generated operations contain foreign-key violations: {violations}")
+    except (OSError, sqlite3.Error, SQLGenerationError) as error:
+        raise GenerationError(f"Unable to validate generated operations: {error}") from error
+    finally:
+        database.close()
+
+    next_operation_number = operation_numbers[-1] + 1 if operation_numbers else 1
+    operation_name = "initial" if not existing_operations else "update"
+    operation_path = operations_dir / f"{next_operation_number}.{operation_name}.sql"
+    operation_path.write_text(operation_sql, encoding="utf-8")
+    return operation_path
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = sys.argv[1:] if argv is None else argv
+    if len(args) != 2:
+        print("Usage: python scripts/generate.py <input_dir> <output_dir>", file=sys.stderr)
+        return 2
+
+    try:
+        operation = generate(Path(args[0]), Path(args[1]))
+    except (GenerationError, SourceError) as error:
+        print(f"Generation failed: {error}", file=sys.stderr)
+        return 1
+    if operation is None:
+        print("No changes; no new PCD operation generated")
     else:
-        for filename in os.listdir(output_dir):
-            file_path = os.path.join(output_dir, filename)
-            os.remove(file_path)
-        print(f"Cleared output directory: {output_dir}")
-
-
-def main():
-    if len(sys.argv) != 3:
-        print("Usage: python generate.py <input_dir> <output_dir>")
-        sys.exit(1)
-    input_dir = sys.argv[1]
-    output_dir = sys.argv[2]
-
-    regex_patterns_dir = os.path.join(output_dir, "regex_patterns")
-    os.makedirs(regex_patterns_dir, exist_ok=True)
-    clear_output_dir(regex_patterns_dir)
-
-    custom_formats_dir = os.path.join(output_dir, "custom_formats")
-    os.makedirs(custom_formats_dir, exist_ok=True)
-    clear_output_dir(custom_formats_dir)
-
-    profiles_dir = os.path.join(output_dir, "profiles")
-    os.makedirs(profiles_dir, exist_ok=True)
-    clear_output_dir(profiles_dir)
-
-    media_management_dir = os.path.join(output_dir, "media_management")
-    os.makedirs(media_management_dir, exist_ok=True)
-    clear_output_dir(media_management_dir)
-
-    for service in ["radarr", "sonarr"]:
-        trash_custom_formats_dir = os.path.join(input_dir, f"{service}/cf")
-        if not os.path.exists(trash_custom_formats_dir):
-            print(
-                f"Custom format directory {trash_custom_formats_dir} does not exist, skipping."
-            )
-            continue
-        regex_patterns = collect_regex_patterns(
-            service,
-            trash_custom_formats_dir,
-            regex_patterns_dir,
-        )
-
-    for service in ["radarr", "sonarr"]:
-        trash_custom_formats_dir = os.path.join(input_dir, f"{service}/cf")
-        if not os.path.exists(trash_custom_formats_dir):
-            print(
-                f"Custom format directory {trash_custom_formats_dir} does not exist, skipping."
-            )
-            continue
-
-        trash_profiles_dir = os.path.join(input_dir, f"{service}/quality-profiles")
-        if not os.path.exists(trash_profiles_dir):
-            print(
-                f"Custom format directory {trash_profiles_dir} does not exist, skipping."
-            )
-            continue
-        trash_id_to_scoring_mapping, trash_id_to_name_mapping = collect_custom_formats(
-            service, trash_custom_formats_dir, custom_formats_dir, regex_patterns
-        )
-
-        # Collect cf-groups with default flag
-        cf_groups_dir = os.path.join(input_dir, f"{service}/cf-groups")
-        cf_group_additions = collect_cf_groups(service, cf_groups_dir)
-
-        collect_profiles(
-            service,
-            trash_profiles_dir,
-            profiles_dir,
-            trash_id_to_scoring_mapping,
-            trash_id_to_name_mapping,
-            cf_group_additions=cf_group_additions,
-        )
-
-    collect_media_management(input_dir, media_management_dir)
+        print(f"Generated {operation}")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
