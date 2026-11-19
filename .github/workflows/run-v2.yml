@@ -1,0 +1,58 @@
+name: Generate Profilarr v2 PCD
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout stable launcher
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Checkout v2-support
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: v2-support
+          path: v2
+
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
+        with:
+          python-version: "3.14.8"
+
+      - name: Install uv
+        run: pip install uv
+
+      - name: Clone TRaSH-Guides
+        run: git clone --depth 1 https://github.com/TRaSH-Guides/Guides.git TRaSH-Guides
+        working-directory: v2
+
+      - name: Install v2 project dependencies
+        run: uv sync --extra dev
+        working-directory: v2
+
+      - name: Generate and validate PCD
+        run: |
+          uv run scripts/generate.py TRaSH-Guides/docs/json .
+          uv run scripts/validate.py .
+          uv run pytest -q
+          uv run pylint scripts tests
+        working-directory: v2
+
+      - name: Commit and push generated operations
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add ops/ pcd.json
+          if git diff --cached --quiet; then
+            echo "No generated updates"
+          else
+            git commit -m "Automated TRaSH-Guides update"
+            git push origin HEAD:v2-support
+          fi
+        working-directory: v2
