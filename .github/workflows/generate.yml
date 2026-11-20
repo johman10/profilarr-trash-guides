@@ -6,6 +6,9 @@ on:
   pull_request:
     branches: [v2-support]
 
+permissions:
+  contents: read
+
 jobs:
   validate:
     runs-on: ubuntu-latest
@@ -35,6 +38,17 @@ jobs:
 
       - name: Run tests
         run: uv run pytest -q
+
+      - name: Verify PR PCD import in Profilarr
+        if: github.event_name == 'pull_request'
+        timeout-minutes: 20
+        env:
+          PCD_REPOSITORY_URL: https://github.com/${{ github.event.pull_request.head.repo.full_name }}
+          PCD_BRANCH: ${{ github.event.pull_request.head.ref }}
+        run: |
+          uv run scripts/check_pcd_import.py \
+            --repository-url "$PCD_REPOSITORY_URL" \
+            --branch "$PCD_BRANCH"
 
       - name: Check generated operations are committed
         run: |
