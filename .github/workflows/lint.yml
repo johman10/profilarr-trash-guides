@@ -1,9 +1,10 @@
-name: Lint and Format Check
+name: Lint Profilarr v2
 
 on:
+  push:
+    branches: [v2]
   pull_request:
-    types: [opened, synchronize]
-  workflow_dispatch:
+    branches: [v2]
 
 jobs:
   lint:

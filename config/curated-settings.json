@@ -1,0 +1,27 @@
+{
+  "radarr_media_settings": [
+    {
+      "name": "Default",
+      "propers_repacks": "doNotPrefer",
+      "enable_media_info": true
+    }
+  ],
+  "sonarr_media_settings": [
+    {
+      "name": "Default",
+      "propers_repacks": "doNotPrefer",
+      "enable_media_info": true
+    }
+  ],
+  "delay_profiles": [
+    {
+      "name": "Default",
+      "preferred_protocol": "prefer_usenet",
+      "usenet_delay": 0,
+      "torrent_delay": 0,
+      "bypass_if_highest_quality": false,
+      "bypass_if_above_custom_format_score": false,
+      "minimum_custom_format_score": null
+    }
+  ]
+}

@@ -1,0 +1,56 @@
+name: Validate Profilarr v2 PCD
+
+on:
+  push:
+    branches: [v2]
+  pull_request:
+    branches: [v2]
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout this repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
+        with:
+          python-version: "3.14.8"
+
+      - name: Install uv
+        run: pip install uv
+
+      - name: Clone TRaSH-Guides
+        run: git clone --depth 1 https://github.com/TRaSH-Guides/Guides.git TRaSH-Guides
+
+      - name: Install project dependencies
+        run: uv sync --extra dev
+
+      - name: Generate and validate PCD
+        run: |
+          uv run scripts/generate.py TRaSH-Guides/docs/json .
+          uv run scripts/validate.py .
+
+      - name: Run tests
+        run: uv run pytest -q
+
+      - name: Verify PR PCD import in Profilarr
+        if: github.event_name == 'pull_request'
+        timeout-minutes: 20
+        env:
+          PCD_REPOSITORY_URL: https://github.com/${{ github.event.pull_request.head.repo.full_name }}
+          PCD_BRANCH: ${{ github.event.pull_request.head.ref }}
+        run: |
+          uv run scripts/check_pcd_import.py \
+            --repository-url "$PCD_REPOSITORY_URL" \
+            --branch "$PCD_BRANCH"
+
+      - name: Check generated operations are committed
+        run: |
+          git add ops/ pcd.json
+          git diff --cached --exit-code

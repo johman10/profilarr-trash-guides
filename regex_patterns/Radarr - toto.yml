@@ -1,6 +1,0 @@
-name: Radarr - toto
-pattern: ^(toto)$
-description: ''
-tags:
-- Radarr
-tests: []

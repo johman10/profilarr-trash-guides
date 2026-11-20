@@ -1,6 +1,0 @@
-name: Sonarr - DaddySubs
-pattern: \[Daddy(Subs)?\]|-Daddy(Subs)?$
-description: ''
-tags:
-- Sonarr
-tests: []

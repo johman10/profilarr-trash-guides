@@ -1,6 +1,0 @@
-name: Radarr - SAD
-pattern: \[SAD\]|-SAD\b
-description: ''
-tags:
-- Radarr
-tests: []

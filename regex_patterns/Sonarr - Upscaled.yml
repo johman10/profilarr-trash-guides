@@ -1,7 +1,0 @@
-name: Sonarr - Upscaled
-pattern: (?<=\b\d{3,4}p\b).*\b(AI[ ._-]?(Enhanced?|Remaster(ed)?)|UPS(UHD)?|Upscaled?([
-  ._-]?UHD)?|UpRez)\b
-description: ''
-tags:
-- Sonarr
-tests: []

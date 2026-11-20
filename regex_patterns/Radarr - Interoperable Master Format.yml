@@ -1,6 +1,0 @@
-name: Radarr - Interoperable Master Format
-pattern: (\b(IMF)\b(?=.*\b(web[ ._-]?rip))\b)
-description: ''
-tags:
-- Radarr
-tests: []

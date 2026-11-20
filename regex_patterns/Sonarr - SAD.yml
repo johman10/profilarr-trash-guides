@@ -1,6 +1,0 @@
-name: Sonarr - SAD
-pattern: \[SAD\]|-SAD$
-description: ''
-tags:
-- Sonarr
-tests: []
