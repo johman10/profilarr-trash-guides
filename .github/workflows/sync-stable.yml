@@ -1,10 +1,9 @@
 name: Sync Profilarr v1 data
 
 on:
-  schedule:
-    - cron: "31 7 * * *"
   pull_request:
     types: [opened, synchronize]
+    branches: [stable]
   workflow_dispatch:
 
 jobs:
