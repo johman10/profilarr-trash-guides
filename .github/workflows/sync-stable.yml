@@ -1,4 +1,4 @@
-name: Generate
+name: Sync Profilarr v1 data
 
 on:
   schedule:
