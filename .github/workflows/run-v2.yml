@@ -44,15 +44,50 @@ jobs:
           uv run pylint scripts tests
         working-directory: v2
 
-      - name: Commit and push generated operations
+      - name: Detect generated updates
+        id: generated
+        working-directory: v2
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add ops/ pcd.json
           if git diff --cached --quiet; then
-            echo "No generated updates"
+            echo "changed=false" >> "$GITHUB_OUTPUT"
           else
-            git commit -m "Automated TRaSH-Guides update"
-            git push origin HEAD:v2-support
+            echo "changed=true" >> "$GITHUB_OUTPUT"
           fi
+
+      - name: Prepare temporary import branch
+        id: import_branch
+        if: steps.generated.outputs.changed == 'true'
         working-directory: v2
+        run: |
+          branch="ci/profilarr-import-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          echo "branch=$branch" >> "$GITHUB_OUTPUT"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "$branch"
+          git commit -m "Automated TRaSH-Guides update"
+          git push origin "HEAD:refs/heads/$branch"
+
+      - name: Verify generated PCD import in Profilarr
+        if: steps.generated.outputs.changed == 'true'
+        timeout-minutes: 20
+        working-directory: v2
+        env:
+          PCD_REPOSITORY_URL: https://github.com/${{ github.repository }}
+          PCD_BRANCH: ${{ steps.import_branch.outputs.branch }}
+        run: |
+          uv run scripts/check_pcd_import.py \
+            --repository-url "$PCD_REPOSITORY_URL" \
+            --branch "$PCD_BRANCH"
+
+      - name: Delete temporary import branch
+        if: ${{ always() && steps.import_branch.outputs.branch != '' }}
+        env:
+          TEMP_BRANCH: ${{ steps.import_branch.outputs.branch }}
+        run: git -C v2 push origin --delete "$TEMP_BRANCH"
+
+      - name: Push generated operations to v2-support
+        if: steps.generated.outputs.changed == 'true'
+        working-directory: v2
+        run: |
+          git push origin HEAD:v2-support
