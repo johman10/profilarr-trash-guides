@@ -2,9 +2,9 @@ name: Lint Profilarr v2
 
 on:
   push:
-    branches: [v2-support, v2]
+    branches: [v2]
   pull_request:
-    branches: [v2-support, v2]
+    branches: [v2]
 
 jobs:
   lint:
