@@ -29,7 +29,7 @@ filterwarnings = [
 
 [tool.pylint.main]
 py-version = "3.13"
-jobs = 4
+jobs = 1
 
 [tool.pylint.messages_control]
 disable = [
