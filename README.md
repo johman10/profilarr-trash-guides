@@ -5,8 +5,10 @@ from the JSON configuration in [TRaSH-Guides](https://github.com/TRaSH-Guides/Gu
 The PCD manifest pins the shared schema version, and generated SQL operations are
 validated against that schema before they are published.
 
-The v2 implementation is developed on the `v2-support` branch while `stable`
-continues to host the existing Profilarr v1 database.
+The `stable` branch is the maintained, backwards-compatible Profilarr v1 line.
+The `v2` branch is the maintained Profilarr v2 line and the target default
+branch for this transition. Choose `stable` for Profilarr v1 and `v2` for
+Profilarr v2.
 
 The generated configurations are based on TRaSH-Guides, whose MIT license and
 copyright notice are included in [TRASH-GUIDES-LICENSE.txt](./TRASH-GUIDES-LICENSE.txt).
@@ -71,7 +73,19 @@ The tests exercise the generation CLI, append-only updates, fractional
 quality-size rounding, naming and profile mappings, and SQL loading with foreign
 key validation against the pinned schema.
 
-The `v2-support` branch runs generation, schema validation, tests, and lint on
-pushes and pull requests. Scheduled runs are deferred until v2 becomes the
-default branch; manual generation is launched from the workflow retained on
-`stable`.
+## GitHub Actions
+
+- **Sync TRaSH-Guides: stable + v2** (`sync-trash-guides.yml`) runs daily on the
+  `v2` default branch and can be dispatched manually. It runs independent jobs
+  against the default TRaSH-Guides branch, using each target branch's generator.
+  The `stable` job runs the v1 generator and tests before pushing; the `v2` job
+  validates the PCD schema, runs tests and lint, and checks the generated PCD
+  import before pushing. A failure on one line does not block the other.
+- **Validate Profilarr v2 PCD** (`validate-v2-pcd.yml`) runs generation,
+  schema validation, tests, and the PR import check on v2 pushes and pull
+  requests. It has read-only repository permissions.
+- **Lint Profilarr v2** (`lint.yml`) runs pylint on v2 pushes and pull requests.
+- The `stable` branch's **Sync Profilarr v1 data** (`sync-stable.yml`) remains
+  manually dispatchable for v1-only updates. Its daily schedule is active while
+  `stable` is the default branch; the combined sync workflow handles daily v1
+  updates once `v2` becomes the default.

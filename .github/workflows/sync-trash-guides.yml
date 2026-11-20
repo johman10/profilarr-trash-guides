@@ -1,23 +1,74 @@
-name: Generate Profilarr v2 PCD
+name: "Sync TRaSH-Guides: stable + v2"
 
 on:
+  schedule:
+    - cron: "31 7 * * *"
   workflow_dispatch:
 
 permissions:
   contents: write
 
 jobs:
-  generate:
+  update-stable:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout stable launcher
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-
-      - name: Checkout v2-support
+      - name: Checkout stable
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          ref: v2-support
+          ref: stable
+          path: stable
+
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
+        with:
+          python-version: "3.14.8"
+
+      - name: Install uv
+        run: pip install uv
+
+      - name: Clone TRaSH-Guides for stable
+        run: git clone --depth 1 https://github.com/TRaSH-Guides/Guides.git TRaSH-Guides
+        working-directory: stable
+
+      - name: Install stable project dependencies
+        run: uv sync --extra dev
+        working-directory: stable
+
+      - name: Generate and test v1 database
+        run: |
+          uv run scripts/generate.py TRaSH-Guides/docs/json .
+          uv run pytest tests
+        working-directory: stable
+
+      - name: Detect stable updates
+        id: stable-generated
+        working-directory: stable
+        run: |
+          git add regex_patterns/ custom_formats/ profiles/ media_management/
+          if git diff --cached --quiet; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Push stable update
+        if: steps.stable-generated.outputs.changed == 'true'
+        working-directory: stable
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Automated TRaSH-Guides update"
+          git push origin HEAD:stable
+
+  update-v2:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout v2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: v2
           path: v2
 
       - name: Set up Python
@@ -28,7 +79,7 @@ jobs:
       - name: Install uv
         run: pip install uv
 
-      - name: Clone TRaSH-Guides
+      - name: Clone TRaSH-Guides for v2
         run: git clone --depth 1 https://github.com/TRaSH-Guides/Guides.git TRaSH-Guides
         working-directory: v2
 
@@ -86,8 +137,8 @@ jobs:
           TEMP_BRANCH: ${{ steps.import_branch.outputs.branch }}
         run: git -C v2 push origin --delete "$TEMP_BRANCH"
 
-      - name: Push generated operations to v2-support
+      - name: Push v2 update
         if: steps.generated.outputs.changed == 'true'
         working-directory: v2
         run: |
-          git push origin HEAD:v2-support
+          git push origin HEAD:v2
