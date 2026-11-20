@@ -37,6 +37,26 @@ operations and append a numbered, guarded SQL delta only when source data change
 Previously generated operations are never rewritten. Review and commit each new
 operation with the source or mapping change that produced it.
 
+### Curated media settings and delay profiles
+
+The generator also reads [config/curated-settings.json](./config/curated-settings.json).
+Maintainers can add, edit, or remove named Radarr media settings, Sonarr media
+settings, and shared delay profiles in the corresponding arrays. Each record
+must include all fields shown in the file; booleans are JSON `true` or `false`.
+Delay values are non-negative minutes. For an `only_usenet` or `only_torrent`
+profile, the other protocol's delay must be `null`. The minimum custom-format
+score must be an integer when its bypass is enabled and `null` otherwise.
+Invalid records or duplicate names within an array stop generation.
+
+The initial media settings use `doNotPrefer` for Propers and Repacks, as
+recommended by TRaSH-Guides. Enabling MediaInfo and the default delay profile
+are repository choices, not TRaSH-Guides recommendations. The delay profile
+prefers Usenet but sets both delays to zero and disables both bypasses, so it
+does not intentionally wait for Usenet. Profilarr users choose and sync these
+records; this generator does not change running Radarr or Sonarr instances.
+Changes, including removals, produce guarded append-only operations alongside
+updates from TRaSH-Guides.
+
 The pinned schema files under `scripts/schema/1.1.0/` are an offline validation
 snapshot; the PCD itself declares the schema dependency in `pcd.json`.
 

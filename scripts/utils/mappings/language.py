@@ -1,18 +1,3 @@
-from utils.mappings.indexer_flags import INDEXER_FLAG_MAPPING
-from utils.mappings.quality_modifiers import QUALITY_MODIFIER_MAPPING
-from utils.mappings.release_type import RELEASE_TYPE_MAPPING
-from utils.mappings.source import SOURCE_MAPPING
-
-
-__all__ = [
-    "INDEXER_FLAG_MAPPING",
-    "LANGUAGE_MAPPING",
-    "QUALITY_MODIFIER_MAPPING",
-    "RELEASE_TYPE_MAPPING",
-    "SOURCE_MAPPING",
-]
-
-
 LANGUAGE_MAPPING = {
     "radarr": {
         -1: "Any",

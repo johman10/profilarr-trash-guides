@@ -4,7 +4,7 @@ import sys
 from pathlib import Path
 
 from generate import SCHEMA_DEPENDENCY, SCHEMA_VERSION
-from pcd.sql import SQLGenerationError, operation_sort_key, replay_operations
+from utils.sql import SQLGenerationError, operation_sort_key, replay_operations
 
 
 ROOT = Path(__file__).resolve().parent

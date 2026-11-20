@@ -3,8 +3,10 @@ import sqlite3
 import sys
 from pathlib import Path
 
-from pcd.source import SourceError, collect_source_rows
-from pcd.sql import (
+from utils.common.errors import SourceError
+from utils.curated import CuratedError, collect_curated_rows
+from utils.source.collect import collect_source_rows
+from utils.sql import (
     SQLGenerationError,
     operation_sort_key,
     render_delta,
@@ -15,6 +17,7 @@ from pcd.sql import (
 
 SCHEMA_DEPENDENCY = "https://github.com/Dictionarry-Hub/schema"
 SCHEMA_VERSION = "1.1.0"
+CURATED_SETTINGS = Path(__file__).resolve().parent.parent / "config" / "curated-settings.json"
 
 
 class GenerationError(ValueError):
@@ -47,6 +50,7 @@ def generate(input_dir: Path, output_dir: Path) -> Path | None:
     if len(operation_numbers) != len(set(operation_numbers)):
         raise GenerationError("PCD operation numbers must be unique")
     rows = collect_source_rows(input_dir)
+    collect_curated_rows(CURATED_SETTINGS, rows)
 
     database = sqlite3.connect(":memory:")
     try:
@@ -82,7 +86,7 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         operation = generate(Path(args[0]), Path(args[1]))
-    except (GenerationError, SourceError) as error:
+    except (GenerationError, SourceError, CuratedError) as error:
         print(f"Generation failed: {error}", file=sys.stderr)
         return 1
     if operation is None:

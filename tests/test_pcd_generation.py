@@ -5,6 +5,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 
 ROOT = Path(__file__).resolve().parents[1]
 SCHEMA_OPERATIONS = ROOT / "scripts" / "schema" / "1.1.0" / "ops"
@@ -175,16 +177,128 @@ def _basic_source_tree(root: Path) -> None:
     _write_json(root, "sonarr/quality-profile-groups/groups.json", [])
 
 
-def _run_generation(source_dir: Path, output_dir: Path) -> subprocess.CompletedProcess[str]:
+def _run_generation(
+    source_dir: Path, output_dir: Path, script: Path = ROOT / "scripts" / "generate.py"
+) -> subprocess.CompletedProcess[str]:
     output_dir.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(ROOT / "pcd.json", output_dir / "pcd.json")
     return subprocess.run(
-        [sys.executable, str(ROOT / "scripts" / "generate.py"), str(source_dir), str(output_dir)],
+        [sys.executable, str(script), str(source_dir), str(output_dir)],
         cwd=ROOT,
         check=False,
         capture_output=True,
         text=True,
     )
+
+
+def _copy_generator(root: Path) -> tuple[Path, Path]:
+    shutil.copytree(ROOT / "scripts", root / "scripts")
+    shutil.copytree(ROOT / "config", root / "config")
+    return root / "scripts" / "generate.py", root / "config" / "curated-settings.json"
+
+
+def test_curated_settings_generate_and_reconcile(tmp_path: Path) -> None:
+    source_dir, output_dir = tmp_path / "source", tmp_path / "output"
+    _basic_source_tree(source_dir)
+    script, config = _copy_generator(tmp_path / "generator")
+    initial = _run_generation(source_dir, output_dir, script)
+    assert initial.returncode == 0, initial.stderr
+
+    database = _validate_output(output_dir)
+    for service in ("radarr", "sonarr"):
+        assert database.execute(
+            f"SELECT name, propers_repacks, enable_media_info FROM {service}_media_settings"
+        ).fetchall() == [("Default", "doNotPrefer", 1)]
+    assert database.execute(
+        "SELECT name, preferred_protocol, usenet_delay, torrent_delay, "
+        "bypass_if_highest_quality, bypass_if_above_custom_format_score, "
+        "minimum_custom_format_score FROM delay_profiles"
+    ).fetchall() == [("Default", "prefer_usenet", 0, 0, 0, 0, None)]
+    database.close()
+
+    curated = json.loads(config.read_text(encoding="utf-8"))
+    curated["radarr_media_settings"][0]["enable_media_info"] = False
+    curated["sonarr_media_settings"] = []
+    curated["delay_profiles"][0].update(
+        preferred_protocol="only_torrent", usenet_delay=None, torrent_delay=30
+    )
+    curated["delay_profiles"].append({
+        **curated["delay_profiles"][0],
+        "name": "Second",
+        "bypass_if_above_custom_format_score": True,
+        "minimum_custom_format_score": 100,
+    })
+    config.write_text(json.dumps(curated), encoding="utf-8")
+    update = _run_generation(source_dir, output_dir, script)
+    assert update.returncode == 0, update.stderr
+    update_sql = (output_dir / "ops" / "2.update.sql").read_text(encoding="utf-8")
+    assert 'DELETE FROM "sonarr_media_settings"' in update_sql
+    assert '"enable_media_info" IS 1' in update_sql
+
+    database = _validate_output(output_dir)
+    assert database.execute("SELECT enable_media_info FROM radarr_media_settings").fetchall() == [(0,)]
+    assert database.execute("SELECT name FROM sonarr_media_settings").fetchall() == []
+    assert database.execute(
+        "SELECT name, preferred_protocol, usenet_delay, torrent_delay, minimum_custom_format_score "
+        "FROM delay_profiles ORDER BY name"
+    ).fetchall() == [
+        ("Default", "only_torrent", None, 30, None),
+        ("Second", "only_torrent", None, 30, 100),
+    ]
+    database.close()
+
+    database = sqlite3.connect(":memory:")
+    for operation in sorted(SCHEMA_OPERATIONS.glob("*.sql")):
+        database.executescript(operation.read_text(encoding="utf-8"))
+    database.executescript((output_dir / "ops" / "1.initial.sql").read_text(encoding="utf-8"))
+    database.execute("UPDATE radarr_media_settings SET propers_repacks = 'preferAndUpgrade'")
+    database.execute("UPDATE sonarr_media_settings SET propers_repacks = 'preferAndUpgrade'")
+    database.executescript(update_sql)
+    assert database.execute(
+        "SELECT propers_repacks, enable_media_info FROM radarr_media_settings"
+    ).fetchall() == [("preferAndUpgrade", 1)]
+    assert database.execute("SELECT propers_repacks FROM sonarr_media_settings").fetchall() == [
+        ("preferAndUpgrade",)
+    ]
+    database.close()
+
+    rerun = _run_generation(source_dir, output_dir, script)
+    assert rerun.returncode == 0, rerun.stderr
+    assert len(list((output_dir / "ops").glob("*.sql"))) == 2
+
+
+@pytest.mark.parametrize(
+    "invalid",
+    ["duplicate", "negative", "boolean_delay", "protocol", "score", "unused_score", "media_type"],
+)
+def test_invalid_curated_settings_do_not_create_operation(tmp_path: Path, invalid: str) -> None:
+    source_dir, output_dir = tmp_path / "source", tmp_path / "output"
+    _basic_source_tree(source_dir)
+    script, config = _copy_generator(tmp_path / "generator")
+    initial = _run_generation(source_dir, output_dir, script)
+    assert initial.returncode == 0, initial.stderr
+    curated = json.loads(config.read_text(encoding="utf-8"))
+    delay = curated["delay_profiles"][0]
+    if invalid == "duplicate":
+        curated["delay_profiles"].append(delay.copy())
+    elif invalid == "negative":
+        delay["usenet_delay"] = -1
+    elif invalid == "boolean_delay":
+        delay["usenet_delay"] = True
+    elif invalid == "protocol":
+        delay["preferred_protocol"] = "only_torrent"
+    elif invalid == "score":
+        delay["bypass_if_above_custom_format_score"] = True
+    elif invalid == "unused_score":
+        delay["minimum_custom_format_score"] = 100
+    else:
+        curated["radarr_media_settings"][0]["propers_repacks"] = []
+    config.write_text(json.dumps(curated), encoding="utf-8")
+
+    result = _run_generation(source_dir, output_dir, script)
+    assert result.returncode == 1
+    assert "Generation failed:" in result.stderr
+    assert sorted(path.name for path in (output_dir / "ops").glob("*.sql")) == ["1.initial.sql"]
 
 
 def _custom_format(trash_id: str, name: str, score: int) -> dict[str, object]:

@@ -29,6 +29,9 @@ TABLE_ORDER = (
     "sonarr_quality_definitions",
     "radarr_naming",
     "sonarr_naming",
+    "radarr_media_settings",
+    "sonarr_media_settings",
+    "delay_profiles",
 )
 
 
