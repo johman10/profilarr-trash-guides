@@ -39,6 +39,21 @@ operations and append a numbered, guarded SQL delta only when source data change
 Previously generated operations are never rewritten. Review and commit each new
 operation with the source or mapping change that produced it.
 
+### Shared custom formats
+
+Radarr and Sonarr formats with identical mapped conditions, descriptions, and
+rename settings are generated as one shared format named after the Radarr format
+without its service prefix. Conditions apply to both services, while profile
+assignments retain their service-specific scores. If conditions or metadata
+diverge, the formats are generated separately again. Ambiguous matches and
+shared-name collisions stop generation for review.
+
+The migration replaces the old service-prefixed formats and updates generated
+profile references. Existing user changes or references may need resolution
+through Profilarr's conflict handling. Profilarr syncs Arr resources by name:
+an existing manually created Arr format with a shared name may be updated, and
+old service-prefixed formats may require separate cleanup.
+
 ### Curated media settings and delay profiles
 
 The generator also reads [config/curated-settings.json](./config/curated-settings.json).

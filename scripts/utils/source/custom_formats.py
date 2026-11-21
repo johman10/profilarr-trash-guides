@@ -60,6 +60,18 @@ class CustomFormatContext:
     tags: set[str]
 
 
+@dataclass(frozen=True)
+class CollectedFormat:
+    service: str
+    path: Path
+    trash_id: str
+    name: str
+    scores: dict[str, int]
+    description: str | None
+    include_in_rename: bool
+    conditions: tuple[tuple[Any, ...], ...]
+
+
 def _condition_value(
     implementation: str,
     fields: dict[str, Any],
@@ -99,6 +111,7 @@ def collect_custom_formats(
     custom_formats: CustomFormatIndex = {}
     custom_format_names: set[str] = set()
     tags: set[str] = set()
+    collected: list[CollectedFormat] = []
 
     for service in SERVICES:
         custom_format_dir = source_dir / service / "cf"
@@ -108,11 +121,14 @@ def collect_custom_formats(
 
         for path in sorted(custom_format_dir.glob("*.json")):
             record = read_object(path)
-            trash_id, name, scores = _collect_custom_format(record, path, context)
-            if name in custom_format_names:
-                raise SourceError(f"{path}: duplicate generated custom-format name '{name}'")
-            custom_format_names.add(name)
-            custom_formats[(service, trash_id)] = (name, scores)
+            item = _collect_custom_format(record, path, context)
+            if item.name in custom_format_names:
+                raise SourceError(f"{path}: duplicate generated custom-format name '{item.name}'")
+            custom_format_names.add(item.name)
+            custom_formats[(service, item.trash_id)] = (item.name, item.scores)
+            collected.append(item)
+
+    _consolidate_custom_formats(collected, custom_formats, rows)
 
     for regex in sorted(regexes.values(), key=lambda item: item["name"]):
         rows["regular_expressions"].append(
@@ -131,7 +147,7 @@ def _collect_custom_format(
     record: dict[str, Any],
     path: Path,
     context: CustomFormatContext,
-) -> tuple[str, str, dict[str, int]]:
+) -> CollectedFormat:
     trash_id = required_string(record, "trash_id", path)
     raw_name = required_string(record, "name", path)
     name = f"{context.service.title()} - {raw_name}"
@@ -163,12 +179,86 @@ def _collect_custom_format(
     )
     service_tag = context.service.title()
     context.tags.add(service_tag)
-    format_tags = _collect_conditions(specifications, path, name, raw_name, context)
+    format_tags, conditions = _collect_conditions(specifications, path, name, raw_name, context)
     context.rows["custom_format_tags"].extend(
         {"custom_format_name": name, "tag_name": tag}
         for tag in sorted(format_tags)
     )
-    return trash_id, name, dict(score_record)
+    return CollectedFormat(
+        context.service, path, trash_id, name, dict(score_record),
+        description, include_in_rename, conditions,
+    )
+
+
+def _consolidate_custom_formats(
+    collected: list[CollectedFormat],
+    custom_formats: CustomFormatIndex,
+    rows: dict[str, list[dict[str, Any]]],
+) -> None:
+    pairs = _find_shared_formats(collected)
+    for movie, series, name in pairs:
+        custom_formats[(movie.service, movie.trash_id)] = (name, movie.scores)
+        custom_formats[(series.service, series.trash_id)] = (name, series.scores)
+        rows["custom_format_tags"].append({"custom_format_name": name, "tag_name": "Sonarr"})
+    _rewrite_shared_rows(rows, pairs)
+
+
+def _find_shared_formats(
+    collected: list[CollectedFormat],
+) -> list[tuple[CollectedFormat, CollectedFormat, str]]:
+    groups: dict[tuple[tuple[Any, ...], ...], list[CollectedFormat]] = {}
+    for item in collected:
+        groups.setdefault(item.conditions, []).append(item)
+
+    existing_names = {item.name for item in collected}
+    shared_names: set[str] = set()
+    pairs: list[tuple[CollectedFormat, CollectedFormat, str]] = []
+    for group in groups.values():
+        radarr = [item for item in group if item.service == "radarr"]
+        sonarr = [item for item in group if item.service == "sonarr"]
+        if not radarr or not sonarr:
+            continue
+        if len(radarr) != 1 or len(sonarr) != 1:
+            names = ", ".join(item.name for item in group)
+            raise SourceError(f"Ambiguous duplicate custom formats: {names}")
+        movie, series = radarr[0], sonarr[0]
+        if (movie.description, movie.include_in_rename) != (
+            series.description, series.include_in_rename
+        ):
+            continue
+        shared_name = movie.name.removeprefix("Radarr - ")
+        if shared_name in shared_names or shared_name in existing_names:
+            raise SourceError(f"{movie.path}: shared custom-format name collision '{shared_name}'")
+        shared_names.add(shared_name)
+        pairs.append((movie, series, shared_name))
+    return pairs
+
+
+def _rewrite_shared_rows(
+    rows: dict[str, list[dict[str, Any]]],
+    pairs: list[tuple[CollectedFormat, CollectedFormat, str]],
+) -> None:
+    replacements = {movie.name: name for movie, _, name in pairs}
+    removed = {series.name for _, series, _ in pairs}
+    for table, table_rows in rows.items():
+        if table == "custom_formats":
+            rows[table] = [
+                {**row, "name": replacements.get(row["name"], row["name"])}
+                for row in table_rows if row["name"] not in removed
+            ]
+        elif table == "custom_format_conditions" or table == "custom_format_tags" or table.startswith(
+            "condition_"
+        ):
+            kept = []
+            for row in table_rows:
+                name = row["custom_format_name"]
+                if name in removed:
+                    continue
+                updated = {**row, "custom_format_name": replacements.get(name, name)}
+                if table == "custom_format_conditions" and name in replacements:
+                    updated["arr_type"] = "all"
+                kept.append(updated)
+            rows[table] = kept
 
 
 def _map_condition(specification: dict[str, Any], service: str, path: Path) -> MappedCondition:
@@ -228,8 +318,9 @@ def _collect_conditions(
     custom_format_name: str,
     raw_name: str,
     context: CustomFormatContext,
-) -> set[str]:
+) -> tuple[set[str], tuple[tuple[Any, ...], ...]]:
     seen: dict[str, tuple[Any, ...]] = {}
+    conditions: list[tuple[Any, ...]] = []
     service_tag = context.service.title()
     format_tags = {service_tag}
     for specification in specifications:
@@ -245,9 +336,13 @@ def _collect_conditions(
                 )
             continue
         seen[mapped.name] = mapped.signature
+        conditions.append(
+            mapped.signature[:4]
+            + (mapped.signature[4] if mapped.condition_row["type"] == "language" else False,)
+        )
         _append_mapped_condition(mapped, custom_format_name, service_tag, context)
         format_tags.add(mapped.tag)
-    return format_tags
+    return format_tags, tuple(sorted(conditions))
 
 
 def _append_mapped_condition(

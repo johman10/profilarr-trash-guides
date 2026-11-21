@@ -316,6 +316,186 @@ def _custom_format(trash_id: str, name: str, score: int) -> dict[str, object]:
     }
 
 
+def test_shared_custom_format_preserves_profiles_and_splits_on_divergence(tmp_path: Path) -> None:
+    source_dir, output_dir = tmp_path / "source", tmp_path / "output"
+    _basic_source_tree(source_dir)
+    radarr = _custom_format("movie-id", "Movie Name", 100)
+    sonarr = _custom_format("series-id", "Series Name", 200)
+    radarr["specifications"] = [
+        {"name": "First", "implementation": "ReleaseTitleSpecification",
+         "fields": {"value": "Movie Name"}},
+        {"name": "Second", "implementation": "ResolutionSpecification", "required": True,
+         "fields": {"value": 1080}},
+    ]
+    _write_json(source_dir, "radarr/cf/shared.json", radarr)
+    _write_json(source_dir, "sonarr/cf/shared.json", sonarr)
+    for service, trash_id in (("radarr", "movie-id"), ("sonarr", "series-id")):
+        _write_json(source_dir, f"{service}/quality-profiles/test.json", {
+            "trash_id": f"{service}-profile",
+            "name": "Test",
+            "cutoff": "HDTV-1080p",
+            "items": [{"name": "HDTV-1080p", "allowed": True}],
+            "formatItems": {"Format": trash_id},
+        })
+
+    initial = _run_generation(source_dir, output_dir)
+    assert initial.returncode == 0, initial.stderr
+    initial_sql = (output_dir / "ops/1.initial.sql").read_text(encoding="utf-8")
+
+    sonarr["specifications"] = [
+        {"name": "Other resolution", "implementation": "ResolutionSpecification",
+         "required": True, "fields": {"value": 1080}},
+        {"name": "Different label", "implementation": "ReleaseTitleSpecification",
+         "fields": {"value": "Movie Name"}},
+    ]
+    _write_json(source_dir, "sonarr/cf/shared.json", sonarr)
+    merged = _run_generation(source_dir, output_dir)
+    assert merged.returncode == 0, merged.stderr
+    assert (output_dir / "ops/1.initial.sql").read_text(encoding="utf-8") == initial_sql
+
+    database = _validate_output(output_dir)
+    assert database.execute("SELECT name FROM custom_formats").fetchall() == [("Movie Name",)]
+    assert database.execute(
+        "SELECT name, arr_type FROM custom_format_conditions WHERE custom_format_name = ? "
+        "ORDER BY name",
+        ("Movie Name",),
+    ).fetchall() == [("First", "all"), ("Second", "all")]
+    assert database.execute(
+        "SELECT tag_name FROM custom_format_tags WHERE custom_format_name = ? ORDER BY tag_name",
+        ("Movie Name",),
+    ).fetchall() == [("Radarr",), ("Release Title",), ("Resolution",), ("Sonarr",)]
+    assert database.execute(
+        "SELECT quality_profile_name, custom_format_name, arr_type, score "
+        "FROM quality_profile_custom_formats ORDER BY quality_profile_name"
+    ).fetchall() == [
+        ("Radarr - Test", "Movie Name", "radarr", 100),
+        ("Sonarr - Test", "Movie Name", "sonarr", 200),
+    ]
+    database.close()
+
+    unchanged = _run_generation(source_dir, output_dir)
+    assert unchanged.returncode == 0, unchanged.stderr
+    assert sorted(path.name for path in (output_dir / "ops").glob("*.sql")) == [
+        "1.initial.sql", "2.update.sql",
+    ]
+
+    sonarr = _custom_format("series-id", "Series Name", 200)
+    _write_json(source_dir, "sonarr/cf/shared.json", sonarr)
+    split = _run_generation(source_dir, output_dir)
+    assert split.returncode == 0, split.stderr
+    database = _validate_output(output_dir)
+    assert database.execute("SELECT name FROM custom_formats ORDER BY name").fetchall() == [
+        ("Radarr - Movie Name",), ("Sonarr - Series Name",),
+    ]
+    assert database.execute(
+        "SELECT quality_profile_name, custom_format_name, score "
+        "FROM quality_profile_custom_formats ORDER BY quality_profile_name"
+    ).fetchall() == [
+        ("Radarr - Test", "Radarr - Movie Name", 100),
+        ("Sonarr - Test", "Sonarr - Series Name", 200),
+    ]
+    database.close()
+
+
+@pytest.mark.parametrize("difference", ["description", "rename"])
+def test_shared_custom_format_keeps_conflicting_metadata_separate(
+    tmp_path: Path, difference: str
+) -> None:
+    source_dir, output_dir = tmp_path / "source", tmp_path / "output"
+    _basic_source_tree(source_dir)
+    radarr = _custom_format("movie-id", "Same", 100)
+    sonarr = _custom_format("series-id", "Same", 200)
+    if difference == "description":
+        sonarr["trash_description"] = "Different description"
+    else:
+        sonarr["includeCustomFormatWhenRenaming"] = True
+    _write_json(source_dir, "radarr/cf/same.json", radarr)
+    _write_json(source_dir, "sonarr/cf/same.json", sonarr)
+    result = _run_generation(source_dir, output_dir)
+    assert result.returncode == 0, result.stderr
+    database = _validate_output(output_dir)
+    assert database.execute("SELECT name FROM custom_formats ORDER BY name").fetchall() == [
+        ("Radarr - Same",), ("Sonarr - Same",),
+    ]
+    database.close()
+
+
+@pytest.mark.parametrize("case", ["ambiguous", "name-collision"])
+def test_shared_custom_format_rejects_ambiguous_or_colliding_names(
+    tmp_path: Path, case: str
+) -> None:
+    source_dir, output_dir = tmp_path / "source", tmp_path / "output"
+    _basic_source_tree(source_dir)
+    radarr = _custom_format("movie-id", "Same", 100)
+    sonarr = _custom_format("series-id", "Same", 200)
+    if case == "ambiguous":
+        duplicate = _custom_format("other-id", "Other", 100)
+        duplicate["specifications"] = radarr["specifications"]
+        _write_json(source_dir, "radarr/cf/other.json", duplicate)
+    else:
+        radarr["name"] = "Sonarr - Other"
+        _write_json(source_dir, "sonarr/cf/other.json", _custom_format("other-id", "Other", 0))
+    _write_json(source_dir, "radarr/cf/same.json", radarr)
+    _write_json(source_dir, "sonarr/cf/same.json", sonarr)
+
+    result = _run_generation(source_dir, output_dir)
+    assert result.returncode == 1
+    assert ("Ambiguous duplicate custom formats" if case == "ambiguous" else
+            "shared custom-format name collision") in result.stderr
+    assert not list((output_dir / "ops").glob("*.sql"))
+
+
+@pytest.mark.parametrize("difference", ["negate", "required", "value", "except-language"])
+def test_different_conditions_do_not_share_a_custom_format(tmp_path: Path, difference: str) -> None:
+    source_dir, output_dir = tmp_path / "source", tmp_path / "output"
+    _basic_source_tree(source_dir)
+    radarr = _custom_format("movie-id", "Same", 100)
+    sonarr = _custom_format("series-id", "Same", 200)
+    spec = {"name": "Same title", "implementation": "ReleaseTitleSpecification",
+            "fields": {"value": "Different" if difference == "value" else "Same"}}
+    if difference == "except-language":
+        radarr["specifications"] = [{
+            "name": "Language", "implementation": "LanguageSpecification", "fields": {"value": 1},
+        }]
+        spec = {
+            "name": "Language", "implementation": "LanguageSpecification",
+            "fields": {"value": 1, "exceptLanguage": True},
+        }
+    elif difference != "value":
+        spec[difference] = True
+    sonarr["specifications"] = [spec]
+    _write_json(source_dir, "radarr/cf/same.json", radarr)
+    _write_json(source_dir, "sonarr/cf/same.json", sonarr)
+    result = _run_generation(source_dir, output_dir)
+    assert result.returncode == 0, result.stderr
+    database = _validate_output(output_dir)
+    assert database.execute("SELECT name FROM custom_formats ORDER BY name").fetchall() == [
+        ("Radarr - Same",), ("Sonarr - Same",),
+    ]
+    database.close()
+
+
+def test_shared_custom_format_compares_service_mapped_values(tmp_path: Path) -> None:
+    source_dir, output_dir = tmp_path / "source", tmp_path / "output"
+    _basic_source_tree(source_dir)
+    for service, value in (("radarr", 31), ("sonarr", 26)):
+        record = _custom_format(f"{service}-id", "Arabic", 0)
+        record["specifications"] = [{
+            "name": "Arabic", "implementation": "LanguageSpecification", "fields": {"value": value},
+        }]
+        _write_json(source_dir, f"{service}/cf/arabic.json", record)
+    result = _run_generation(source_dir, output_dir)
+    assert result.returncode == 0, result.stderr
+    database = _validate_output(output_dir)
+    assert database.execute(
+        "SELECT custom_format_name, language_name FROM condition_languages"
+    ).fetchall() == [("Arabic", "Arabic")]
+    assert database.execute(
+        "SELECT arr_type FROM custom_format_conditions WHERE custom_format_name = 'Arabic'"
+    ).fetchall() == [("all",)]
+    database.close()
+
+
 def test_profile_mapping_includes_only_default_and_required_group_members(tmp_path: Path) -> None:
     source_dir = tmp_path / "source"
     output_dir = tmp_path / "output"
