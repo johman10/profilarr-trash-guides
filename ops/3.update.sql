@@ -1,0 +1,10 @@
+DELETE FROM "condition_languages" WHERE "custom_format_name" IS 'Radarr - Wrong Language' AND "condition_name" IS 'Wrong Language' AND "language_name" IS 'Original' AND "except_language" IS 0;
+DELETE FROM "condition_languages" WHERE "custom_format_name" IS 'Sonarr - Wrong Language' AND "condition_name" IS 'Wrong Language' AND "language_name" IS 'Original' AND "except_language" IS 0;
+DELETE FROM "custom_format_tags" WHERE "custom_format_name" IS 'Radarr - Wrong Language' AND "tag_name" IS 'Language';
+DELETE FROM "custom_format_tags" WHERE "custom_format_name" IS 'Radarr - Wrong Language' AND "tag_name" IS 'Radarr';
+DELETE FROM "custom_format_tags" WHERE "custom_format_name" IS 'Sonarr - Wrong Language' AND "tag_name" IS 'Language';
+DELETE FROM "custom_format_tags" WHERE "custom_format_name" IS 'Sonarr - Wrong Language' AND "tag_name" IS 'Sonarr';
+DELETE FROM "custom_format_conditions" WHERE "custom_format_name" IS 'Radarr - Wrong Language' AND "name" IS 'Wrong Language' AND "type" IS 'language' AND "arr_type" IS 'radarr' AND "negate" IS 1 AND "required" IS 1;
+DELETE FROM "custom_format_conditions" WHERE "custom_format_name" IS 'Sonarr - Wrong Language' AND "name" IS 'Wrong Language' AND "type" IS 'language' AND "arr_type" IS 'sonarr' AND "negate" IS 1 AND "required" IS 1;
+DELETE FROM "custom_formats" WHERE "name" IS 'Radarr - Wrong Language' AND "description" IS NULL AND "include_in_rename" IS 0;
+DELETE FROM "custom_formats" WHERE "name" IS 'Sonarr - Wrong Language' AND "description" IS NULL AND "include_in_rename" IS 0;
